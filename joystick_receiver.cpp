@@ -1,7 +1,8 @@
 #include "joystick_receiver.h"
 
-Receiver::Receiver(const std::string& ip, uint16_t port) : ip(ip), port(port) {
+Receiver::Receiver(const std::string& ip, uint16_t port, const char* dev) : ip(ip), port(port), sbus(), dev(dev), last_write(std::chrono::steady_clock::now()) {
     initializeSocket();
+    initializeSBUS();
 }
 
 void Receiver::initializeSocket()
@@ -28,6 +29,17 @@ void Receiver::initializeSocket()
     }
 }
 
+void Receiver::initializeSBUS()
+{
+    rcdrivers_err_t err = sbus.install(dev, false);  // false for non-blocking
+    if (err != RCDRIVERS_OK)
+    {
+        std::cerr << "SBUS install error: " << err << std::endl;
+        return;
+    }
+
+    std::cout << "SBUS installed" << std::endl;
+}
 
 void Receiver::run()
 {
@@ -46,48 +58,73 @@ void Receiver::run()
 }
 
 
+void print_msg(kelpie_rc_msgs::RCChannels& msg) {
+    std::cout << "\t" << "rc1 = " << msg.rc1() << std::endl;
+    std::cout << "\t" << "rc2 = " << msg.rc2() << std::endl;
+    std::cout << "\t" << "rc3 = " << msg.rc3() << std::endl;
+    std::cout << "\t" << "rc4 = " << msg.rc4() << std::endl;
+    std::cout << "\t" << "rc5 = " << msg.rc5() << std::endl;
+    std::cout << "\t" << "rc6 = " << msg.rc6() << std::endl;
+    std::cout << "\t" << "rc7 = " << msg.rc7() << std::endl;
+    std::cout << "\t" << "rc8 = " << msg.rc8() << std::endl;
+    std::cout << "\t" << "rc9 = " << msg.rc9() << std::endl;
+    std::cout << "\t" << "rc10 = " << msg.rc10() << std::endl;
+    std::cout << "\t" << "rc11 = " << msg.rc11() << std::endl;
+    std::cout << "\t" << "rc12 = " << msg.rc12() << std::endl;
+    std::cout << "\t" << "rc13 = " << msg.rc13() << std::endl;
+    std::cout << "\t" << "rc14 = " << msg.rc14() << std::endl;
+    std::cout << "\t" << "rc15 = " << msg.rc15() << std::endl;
+    std::cout << "\t" << "rc16 = " << msg.rc16() << std::endl;
+    std::cout << "---" << std::endl;
+}
+
 void Receiver::processPacket(const uint8_t* data, size_t length)
 {
-    std::vector<uint8_t> encoded(data, data + length);
-   
-    if(!encoded.empty() && encoded.back() == 0x00)
-    {
-        encoded.pop_back();
-    }
-
-    try {
-        std::vector<uint8_t> decoded(encoded.size());
-        
-        cobs_decode_result result = cobs_decode(decoded.data(), decoded.size(), encoded.data(), encoded.size());
-        decoded.resize(result.out_len);
-        
         // debugging using raw hex data
         std::cout << "Raw decoded data: ";
-        for(size_t i = 0; i < decoded.size(); ++i) {
-            std::cout << std::hex << (int)decoded[i] << " ";
-        }  
+        for(size_t i = 0; i < length; ++i) {
+            std::cout << std::hex << (int)data[i] << " ";
+        }
         std::cout << std::dec << std::endl;
         // rc channels parsing
-        rc_interface::RCChannels msg;
-        
-        if(msg.ParseFromArray(decoded.data(), static_cast<int>(decoded.size())))
+        kelpie_rc_msgs::RCChannels msg;
+
+        if(msg.ParseFromArray(data, static_cast<int>(length)))
         {
-            std::cout << "rc1 = " << msg.rc1() << std::endl;
-            std::cout << "rc2 = " << msg.rc2() << std::endl;
+            // print_msg(msg);
+            sbus_packet_t packet = {
+                .channels = {
+                    static_cast<uint16_t>(msg.rc1()),
+                    static_cast<uint16_t>(msg.rc2()),
+                    static_cast<uint16_t>(msg.rc3()),
+                    static_cast<uint16_t>(msg.rc4()),
+                    static_cast<uint16_t>(msg.rc5()),
+                    static_cast<uint16_t>(msg.rc6()),
+                    static_cast<uint16_t>(msg.rc7()),
+                    static_cast<uint16_t>(msg.rc8()),
+                    static_cast<uint16_t>(msg.rc9()),
+                    static_cast<uint16_t>(msg.rc10()),
+                    static_cast<uint16_t>(msg.rc11()),
+                    static_cast<uint16_t>(msg.rc12()),
+                    static_cast<uint16_t>(msg.rc13()),
+                    static_cast<uint16_t>(msg.rc14()),
+                    static_cast<uint16_t>(msg.rc15()),
+                    static_cast<uint16_t>(msg.rc16()),
+                },
+                .ch17 = false,
+                .ch18 = false,
+                .failsafe = true, // TODO: Change?
+                .frameLost = false,
+            };
+            auto now = std::chrono::steady_clock::now();
+            if(now - last_write > std::chrono::milliseconds(20)) {
+                sbus.write(packet);
+                last_write = now;
+            }
+            else {
+                std::cout << "Sending too fast, throttling..." << std::endl;
+            }
         } else {
             std::cerr << "Failed to parse protobuf message." << std::endl;
         }
-    } catch (std::exception& e) {
-        std::cerr << "COBS decode failed: " << e.what() << std::endl;
-        return;
-    }
-}
-
-
-int main()
-{
-    Receiver receiver("127.0.0.1", 5005);
-    receiver.run();
-
-    return 0;
 }
