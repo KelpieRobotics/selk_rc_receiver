@@ -2,7 +2,7 @@
 
 int main()
 {
-    Receiver receiver("127.0.0.1", 5005, "/dev/ttyAMA1");
+    Receiver receiver("192.168.137.20", 5005, "/dev/ttyS8");
     receiver.run();
 
     return 0;

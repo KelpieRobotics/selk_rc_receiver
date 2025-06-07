@@ -113,7 +113,7 @@ void Receiver::processPacket(const uint8_t* data, size_t length)
                 },
                 .ch17 = false,
                 .ch18 = false,
-                .failsafe = true, // TODO: Change?
+                .failsafe = false, // TODO: Change?
                 .frameLost = false,
             };
             auto now = std::chrono::steady_clock::now();
